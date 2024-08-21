@@ -3,3 +3,20 @@ services:
         image: mongo
         ports:
             - 27017:27017
+
+    app:
+        build: .
+        ports:
+            - 8080:8080
+        environment:
+            - MONGODB_HOST=mongo
+        depends_on:
+            - mongo
+        develop:
+            watch:
+                - action: rebuild
+                  path: ./
+                  target: /app/
+                - action: rebuild
+                  path: ./requirements.txt
+                  target: /app/requirements.txt
