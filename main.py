@@ -36,28 +36,21 @@ async def root(request: Request):
 
 @app.get("/delete/{id}")
 async def delete_todo(request: Request, id: str):
-    with open("database.json") as f:
-        data = json.load(f)
-    del data[id]
-    with open("database.json", "w") as f:
-        json.dump(data, f)
+    result = todos_collection.delete_one({"id": int(id)})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Todo not found")
     return RedirectResponse("/", 303)
 
 
 @app.post("/add")
 async def add_todo(request: Request):
-    with open("database.json") as f:
-        data = json.load(f)
     formdata = await request.form()
-    newdata = {}
-    i = 1
-    for id in data:
-        newdata[str(i)] = data[id]
-        i += 1
-    newdata[str(i)] = formdata["newtodo"]
-    print(newdata)
-    with open("database.json", "w") as f:
-        json.dump(newdata, f)
+    new_id = todos_collection.count_documents({}) + 1
+    new_todo = {"id": new_id, "description": formdata["newtodo"]}
+    try:
+        todos_collection.insert_one(new_todo)
+    except Exception as ex:
+        raise HTTPException(status_code=500, detail=str(ex))
     return RedirectResponse("/", 303)
 
 
@@ -82,5 +75,3 @@ def migrate_database(request: Request):
         )
     except Exception as ex:
         raise HTTPException(status_code=500, detail=str(ex))
-
-
