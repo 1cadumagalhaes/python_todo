@@ -6,6 +6,7 @@ import pymongo
 
 from pymongo.errors import BulkWriteError
 from contextlib import asynccontextmanager
+from os import getenv
 
 client, db, todos_collection = None, None, None
 
@@ -13,7 +14,7 @@ client, db, todos_collection = None, None, None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global client, db, todos_collection
-    client = pymongo.MongoClient("localhost", 27017)
+    client = pymongo.MongoClient(getenv("MONGODB_HOST", "localhost"), 27017)
     db = client.todo_database
     todos_collection = db.todos
     todos_collection.create_index([("id", pymongo.ASCENDING)], unique=True)
@@ -45,10 +46,19 @@ async def delete_todo(request: Request, id: str):
 @app.post("/add")
 async def add_todo(request: Request):
     formdata = await request.form()
-    new_id = todos_collection.count_documents({}) + 1
+    last_doc = todos_collection.find_one(sort=[("id", pymongo.DESCENDING)])
+
+    if last_doc:
+        new_id = last_doc["id"] + 1
+    else:
+        new_id = 1
     new_todo = {"id": new_id, "description": formdata["newtodo"]}
     try:
         todos_collection.insert_one(new_todo)
+
+    except pymongo.errors.DuplicateKeyError:
+        raise HTTPException(status_code=400, detail="Todo with this ID already exists")
+
     except Exception as ex:
         raise HTTPException(status_code=500, detail=str(ex))
     return RedirectResponse("/", 303)
@@ -60,10 +70,15 @@ def migrate_database(request: Request):
     with open("database.json") as f:
         data = json.load(f)
     try:
-        todos_collection.insert_many(
+        results = todos_collection.insert_many(
             [{"id": int(k), "description": v} for k, v in data.items()]
         )
-        return todos_collection.count_documents({})
+        return JSONResponse(
+            content={
+                "message": f"Migrated {len(results)} documents. Total of {todos_collection.count_documents({})}"
+            },
+            status_code=200,
+        )
     except BulkWriteError as bwe:
         return JSONResponse(
             content={
