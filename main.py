@@ -27,10 +27,10 @@ templates = Jinja2Templates(directory="templates")
 
 @app.get("/")
 async def root(request: Request):
-    with open("database.json") as f:
-        data = json.load(f)
+    data = list(todos_collection.find({}, {"_id": 0}))
+    tododict = {str(todo["id"]): todo["description"] for todo in data}
     return templates.TemplateResponse(
-        "todolist.html", {"request": request, "tododict": data}
+        "todolist.html", {"request": request, "tododict": tododict}
     )
 
 
@@ -82,3 +82,5 @@ def migrate_database(request: Request):
         )
     except Exception as ex:
         raise HTTPException(status_code=500, detail=str(ex))
+
+
