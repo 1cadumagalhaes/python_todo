@@ -1,12 +1,28 @@
-from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 import json
 import pymongo
 
-app = FastAPI()
+from pymongo.errors import BulkWriteError
+from contextlib import asynccontextmanager
+
+client, db, todos_collection = None, None, None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global client, db, todos_collection
+    client = pymongo.MongoClient("localhost", 27017)
+    db = client.todo_database
+    todos_collection = db.todos
+    todos_collection.create_index([("id", pymongo.ASCENDING)], unique=True)
+    yield
+    client.close()
+
+
+app = FastAPI(lifespan=lifespan)
 templates = Jinja2Templates(directory="templates")
-client = pymongo.MongoClient("localhost", 27017)
 
 
 @app.get("/")
@@ -48,14 +64,21 @@ async def add_todo(request: Request):
 @app.get("/migrate")
 def migrate_database(request: Request):
 
-    db = client.warmly
-    todos = db.todos
     with open("database.json") as f:
         data = json.load(f)
     try:
-        todos.insert_many([{k: v} for k, v in data.items()])
-
-        return todos.count_documents({})
+        todos_collection.insert_many(
+            [{"id": int(k), "description": v} for k, v in data.items()]
+        )
+        return todos_collection.count_documents({})
+    except BulkWriteError as bwe:
+        return JSONResponse(
+            content={
+                "message": f"Partially migrated. {bwe.details['nInserted']} documents inserted.",
+                "errors": f"{len(bwe.details['writeErrors'])} errors occurred.",
+                "detail": str(bwe.details["writeErrors"]),
+            },
+            status_code=207,
+        )
     except Exception as ex:
-
-        return {"error": str(ex)}
+        raise HTTPException(status_code=500, detail=str(ex))
