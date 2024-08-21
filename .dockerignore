@@ -1,0 +1,10 @@
+*.md
+LICENSE
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.git
+.env
+.venv
+.flake8
